@@ -11,6 +11,18 @@ read -p "请输入您的域名(例如: trade.yourdomain.com): " DOMAIN
 EMAIL="admin@${DOMAIN}"
 echo "已自动生成邮箱: $EMAIL"
 
+# 更新系统并安装必要的包
+if [ -f /etc/debian_version ]; then
+    # Debian/Ubuntu系统
+    apt update && apt upgrade -y
+    apt install -y python3 python3-pip git supervisor nginx certbot python3-certbot-nginx
+elif [ -f /etc/redhat-release ]; then
+    # CentOS系统
+    yum update -y
+    yum install -y epel-release
+    yum install -y python3 python3-pip git supervisor nginx certbot python3-certbot-nginx
+fi
+
 # 添加证书配置选项
 read -p "是否自动申请SSL证书? (y/n): " AUTO_SSL
 if [[ $AUTO_SSL =~ ^[Yy]$ ]]; then
@@ -38,18 +50,6 @@ else
         echo "证书文件不存在!"
         exit 1
     fi
-fi
-
-# 更新系统并安装必要的包
-if [ -f /etc/debian_version ]; then
-    # Debian/Ubuntu系统
-    apt update && apt upgrade -y
-    apt install -y python3 python3-pip git supervisor nginx certbot python3-certbot-nginx
-elif [ -f /etc/redhat-release ]; then
-    # CentOS系统
-    yum update -y
-    yum install -y epel-release
-    yum install -y python3 python3-pip git supervisor nginx certbot python3-certbot-nginx
 fi
 
 # 检查必要服务状态
