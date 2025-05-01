@@ -19,8 +19,16 @@
 - root 权限
 
 ## Python 环境配置
-
+1. 登录服务器
+```bash
+ssh root@你的服务器IP
+```
 ### Ubuntu/Debian 系统:
+2. 一键安装python命令，如何不成功可以选择下面的命令手动安装
+```bash
+sudo apt update && sudo apt upgrade -y && sudo apt autoremove -y && sudo apt clean && \sudo apt install -y software-properties-common && \sudo add-apt-repository -y ppa:deadsnakes/ppa && \sudo apt update && \sudo apt install -y python3.10 python3.10-venv python3.10-dev && \sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
+```
+3. 按照下面的命令逐条复制安装python
 ```bash
 # 一键更新升级系统
 sudo apt update && sudo apt upgrade -y && sudo apt autoremove -y && sudo apt clean
@@ -66,32 +74,21 @@ rm -rf Python-3.10.9*
 
 ## 快速部署
 
-### 1. 登录服务器
+### 1. 一键安装程序脚本自动安装
 ```bash
-ssh root@你的服务器IP
+wget https://raw.githubusercontent.com/jiabo09683/okxdjtv/main/deploy.sh && \chmod +x deploy.sh && \./deploy.sh
 ```
 
-### 2. 下载部署脚本
-```bash
-wget https://raw.githubusercontent.com/jiabo09683/okxdjtv/main/deploy.sh
-chmod +x deploy.sh
-```
-
-### 3. 运行部署脚本
-```bash
-./deploy.sh
-```
-
-### 4. 配置说明
+### 2. 配置说明
 
 部署过程中需要输入：
 - 域名地址
 - 选择是否自动配置证书（自动配置证书需要80端口，可以自己上传证书到服务器，然后提供路径）
 - 环境变量配置（可选择N稍后配置）
 
-### 5. 环境变量配置
-
-编辑 `.env` 文件，配置以下参数：
+### 3. 环境变量配置
+国外服务器不需要配置代理
+ `.env` 文件，配置以下参数：
 
 ```properties
 # OKX API 配置
@@ -113,25 +110,7 @@ USE_HTTPS=true            # 是否启用HTTPS
 # 通知设置
 WECHAT_BOT_URL=你的企业微信机器人webhook地址
 ```
-## 使用说明
 
-### TradingView 警报配置
-
-在 TradingView 中设置警报,消息格式如下:
-
-```json
-{
-  "ticker": "{{ticker}}",
-  "exchange": "okx",
-  "action": "{{strategy.order.action}}",
-  "amount": "{{strategy.order.contracts}}",
-  "price": "{{strategy.order.price}}", 
-  "symbol": "BTC/USDT",
-  "secret": "你的密钥（由系统自动生成）",
-  "time": "{{time}}",
-  "interval": "{{interval}}"
-}
-```
 ## 部署后验证
 
 1. 检查服务状态:
@@ -148,6 +127,31 @@ curl https://你的域名
 ```bash
 tail -f /var/log/okxdjtv/out.log
 ```
+
+## 使用说明
+
+### TradingView 警报配置
+
+1.在 TradingView 警报中设置企业微信接收到的消息,消息格式如下:
+
+```json
+{
+  "ticker": "{{ticker}}",
+  "exchange": "okx",
+  "action": "{{strategy.order.action}}",
+  "amount": "{{strategy.order.contracts}}",
+  "price": "{{strategy.order.price}}", 
+  "symbol": "BTC/USDT（币种名字在env文件配置后自动生成）",
+  "secret": "你的密钥（由系统自动生成）",
+  "time": "{{time}}",
+  "interval": "{{interval}}"
+}
+
+2.在 TradingView 警报中设置企业微信接收到的Webhook URL 链接格式如下：
+ 
+ https//域名/webhook
+```
+
 
 ## 常用维护命令
 
