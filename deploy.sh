@@ -11,6 +11,35 @@ read -p "请输入您的域名(例如: trade.yourdomain.com): " DOMAIN
 EMAIL="admin@${DOMAIN}"
 echo "已自动生成邮箱: $EMAIL"
 
+# 添加证书配置选项
+read -p "是否自动申请SSL证书? (y/n): " AUTO_SSL
+if [[ $AUTO_SSL =~ ^[Yy]$ ]]; then
+    # 原有的自动申请证书流程
+    echo "创建证书验证目录..."
+    mkdir -p /var/www/html/.well-known/acme-challenge
+    chmod -R 755 /var/www/html
+    
+    echo "申请 SSL 证书..."
+    certbot certonly --webroot -w /var/www/html -d $DOMAIN --email $EMAIL --agree-tos --no-eff-email --non-interactive
+    
+    if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+        echo "SSL 证书申请失败!"
+        exit 1
+    fi
+    
+    SSL_CERT="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
+    SSL_KEY="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
+else
+    # 手动配置证书路径
+    read -p "请输入SSL证书路径 (fullchain.pem): " SSL_CERT
+    read -p "请输入SSL私钥路径 (privkey.pem): " SSL_KEY
+    
+    if [ ! -f "$SSL_CERT" ] || [ ! -f "$SSL_KEY" ]; then
+        echo "证书文件不存在!"
+        exit 1
+    fi
+fi
+
 # 更新系统并安装必要的包
 if [ -f /etc/debian_version ]; then
     # Debian/Ubuntu系统
@@ -125,26 +154,11 @@ if ! nginx -t; then
 fi
 systemctl restart nginx
 
-# 申请 SSL 证书
-echo "申请 SSL 证书..."
-certbot certonly --webroot -w /var/www/html -d $DOMAIN --email $EMAIL --agree-tos --no-eff-email --non-interactive
-
-# 检查证书
-if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-    echo "SSL 证书申请失败!"
-    exit 1
-fi
-
-# 配置完整的 Nginx (HTTPS)
-echo "配置 HTTPS..."
+# 修改 Nginx HTTPS 配置部分
 cat > /etc/nginx/conf.d/$DOMAIN.conf << EOF
 server {
     listen 80;
     server_name $DOMAIN;
-    
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
-    }
     
     location / {
         return 301 https://\$server_name\$request_uri;
@@ -155,8 +169,8 @@ server {
     listen 443 ssl;
     server_name $DOMAIN;
     
-    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    ssl_certificate $SSL_CERT;
+    ssl_certificate_key $SSL_KEY;
     
     # SSL 配置优化
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -229,13 +243,21 @@ else
     echo "后续步骤:"
     echo "1. 编辑环境变量: nano /root/okxdjtv/.env"
     echo "2. 重新加载 Supervisor:"
-    echo "   supervisorctl reread"
-    echo "   supervisorctl update"
+
     echo "3. 启动服务: supervisorctl start okxdjtv"
     echo "4. 检查状态: supervisorctl status okxdjtv"
     echo "5. 查看日志:"
     echo "   - 程序日志: tail -f /var/log/okxdjtv/out.log"
     echo "   - 错误日志: tail -f /var/log/okxdjtv/err.log"
+    echo "常用命令:"
+    echo "  - 重新加载 Supervisor:"
+    echo "  - supervisorctl reread"
+    echo "  - supervisorctl update"
+    echo "  - 启动服务: supervisorctl start okxdjtv"
+    echo "  - 停止服务：supervisorctl stop okxdjtv"
+    echo "  - 重启服务: supervisorctl restart okxdjtv"
+    echo "  - 查看状态: supervisorctl status okxdjtv"
+
     echo "=============================================="
 fi
 
