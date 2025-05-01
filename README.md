@@ -10,8 +10,10 @@
 
 ### Ubuntu/Debian 系统:
 ```bash
+# 一键更新升级系统
+sudo apt update && sudo apt upgrade -y && sudo apt autoremove -y && sudo apt clean
+
 # 安装依赖
-sudo apt update
 sudo apt install -y software-properties-common
 
 # 添加 deadsnakes PPA 源
@@ -27,8 +29,10 @@ sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 
 
 ### CentOS 系统:
 ```bash
+# 一键更新升级系统
+sudo yum update -y && sudo yum upgrade -y && sudo yum clean all
+
 # 安装依赖
-sudo yum update -y
 sudo yum groupinstall -y "Development Tools"
 sudo yum install -y openssl-devel bzip2-devel libffi-devel
 
@@ -42,6 +46,10 @@ sudo make altinstall
 # 创建软链接
 sudo ln -sf /usr/local/bin/python3.10 /usr/bin/python3
 sudo ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3
+
+# 清理安装文件
+cd ..
+rm -rf Python-3.10.9*
 ```
 
 ### 验证 Python 版本
