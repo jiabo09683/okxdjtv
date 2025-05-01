@@ -23,11 +23,18 @@ elif [ -f /etc/redhat-release ]; then
     yum install -y python3 python3-pip git supervisor nginx certbot python3-certbot-nginx
 fi
 
-# 检查必要服务是否正常运行
+# 检查必要服务状态
 echo "检查服务状态..."
+systemctl start supervisor
 systemctl start nginx
+
 if ! systemctl is-active --quiet nginx; then
-    echo "Nginx 启动失败，请检查配置"
+    echo "Nginx 启动失败"
+    exit 1
+fi
+
+if ! systemctl is-active --quiet supervisor; then
+    echo "Supervisor 启动失败"
     exit 1
 fi
 
@@ -37,10 +44,10 @@ if [ -d "/root/okxdjtv" ]; then
     mv /root/okxdjtv "/root/okxdjtv_backup_$(date +%Y%m%d_%H%M%S)"
 fi
 
-git clone https://github.com/jiabo09683/okxdjtv.git
-cd okxdjtv
+git clone https://github.com/jiabo09683/okxdjtv.git /root/okxdjtv
+cd /root/okxdjtv
 
-# 创建虚拟环境
+# 创建并激活虚拟环境
 python3 -m venv venv
 source venv/bin/activate
 
@@ -60,31 +67,40 @@ else
     SKIP_SERVICE_START=1
 fi
 
+# 创建日志目录
+mkdir -p /var/log/okxdjtv
+chmod 755 /var/log/okxdjtv
+
 # 配置 Supervisor
 echo "配置 Supervisor..."
-mkdir -p /var/log/okxdjtv
 cat > /etc/supervisor/conf.d/okxdjtv.conf << EOF
 [program:okxdjtv]
 directory=/root/okxdjtv
-command=/root/okxdjtv/venv/bin/python okx_account.py
+command=/root/okxdjtv/venv/bin/python /root/okxdjtv/okx_account.py
+user=root
 autostart=$([ "$SKIP_SERVICE_START" == "1" ] && echo "false" || echo "true")
 autorestart=true
+startsecs=10
+startretries=3
+stopasgroup=true
+killasgroup=true
 stderr_logfile=/var/log/okxdjtv/err.log
 stdout_logfile=/var/log/okxdjtv/out.log
+environment=PATH="/root/okxdjtv/venv/bin:%(ENV_PATH)s",PYTHONPATH="/root/okxdjtv"
 EOF
+
+# 重新加载 Supervisor 配置
+supervisorctl reread
+supervisorctl update
 
 # 创建证书验证目录
 echo "创建证书验证目录..."
 mkdir -p /var/www/html/.well-known/acme-challenge
 chmod -R 755 /var/www/html
 
-# SSL证书配置
-echo "SSL证书配置..."
-read -p "是否自动申请SSL证书? (y/n): " AUTO_SSL
-if [[ $AUTO_SSL =~ ^[Yy]$ ]]; then
-    # 配置基础的 Nginx (仅 HTTP)
-    echo "配置基础 HTTP 服务..."
-    cat > /etc/nginx/conf.d/$DOMAIN.conf << EOF
+# 配置基础的 Nginx (仅 HTTP)
+echo "配置基础 HTTP 服务..."
+cat > /etc/nginx/conf.d/$DOMAIN.conf << EOF
 server {
     listen 80;
     server_name $DOMAIN;
@@ -101,43 +117,22 @@ server {
 }
 EOF
 
-    # 测试并重启 Nginx
-    nginx -t && systemctl restart nginx
+# 测试并重启 Nginx
+echo "测试 Nginx 配置..."
+if ! nginx -t; then
+    echo "Nginx 配置测试失败"
+    exit 1
+fi
+systemctl restart nginx
 
-    # 申请 SSL 证书
-    echo "申请 SSL 证书..."
-    certbot certonly --webroot -w /var/www/html -d $DOMAIN --email $EMAIL --agree-tos --no-eff-email --non-interactive
+# 申请 SSL 证书
+echo "申请 SSL 证书..."
+certbot certonly --webroot -w /var/www/html -d $DOMAIN --email $EMAIL --agree-tos --no-eff-email --non-interactive
 
-    if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-        echo "SSL 证书申请失败!"
-        exit 1
-    fi
-
-    SSL_CERT="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
-    SSL_KEY="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
-
-    # 配置自动续期
-    echo "配置自动续期..."
-    cat > /etc/cron.d/certbot-renewal << EOF
-0 0,12 * * * root test -x /usr/bin/certbot -a \! -d /run/systemd/shutdown && certbot renew --quiet --deploy-hook "systemctl reload nginx"
-EOF
-    chmod 644 /etc/cron.d/certbot-renewal
-else
-    echo "请提供SSL证书文件..."
-    read -p "输入SSL证书文件路径 (fullchain.pem): " SSL_CERT
-    read -p "输入SSL私钥文件路径 (privkey.pem): " SSL_KEY
-
-    # 验证证书文件
-    if [ ! -f "$SSL_CERT" ] || [ ! -f "$SSL_KEY" ]; then
-        echo "错误: 证书文件不存在!"
-        exit 1
-    fi
-
-    # 验证证书有效性
-    if ! openssl x509 -in "$SSL_CERT" -noout -text > /dev/null 2>&1; then
-        echo "错误: 无效的SSL证书文件!"
-        exit 1
-    fi
+# 检查证书
+if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    echo "SSL 证书申请失败!"
+    exit 1
 fi
 
 # 配置完整的 Nginx (HTTPS)
@@ -160,8 +155,8 @@ server {
     listen 443 ssl;
     server_name $DOMAIN;
     
-    ssl_certificate $SSL_CERT;
-    ssl_certificate_key $SSL_KEY;
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
     
     # SSL 配置优化
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -180,26 +175,32 @@ server {
 }
 EOF
 
-# 测试并重启 Nginx
-echo "测试 Nginx 配置..."
+# 再次测试并重启 Nginx
 if ! nginx -t; then
     echo "HTTPS 配置失败"
     exit 1
 fi
 systemctl restart nginx
 
+# 配置证书自动续期
+echo "配置自动续期..."
+cat > /etc/cron.d/certbot-renewal << EOF
+0 0,12 * * * root test -x /usr/bin/certbot -a \! -d /run/systemd/shutdown && certbot renew --quiet --deploy-hook "systemctl reload nginx"
+EOF
+chmod 644 /etc/cron.d/certbot-renewal
+
 if [ "$SKIP_SERVICE_START" != "1" ]; then
     # 启动服务
     echo "启动服务..."
-    supervisorctl reread
-    supervisorctl update
     supervisorctl start okxdjtv
 
     # 等待服务启动
-    sleep 3
-    STATUS=$(supervisorctl status okxdjtv)
-    if [[ $STATUS != *"RUNNING"* ]]; then
-        echo "服务启动失败，请检查日志:"
+    sleep 5
+    if ! supervisorctl status okxdjtv | grep -q "RUNNING"; then
+        echo "服务启动失败，请检查以下信息："
+        echo "1. Supervisor 状态："
+        supervisorctl status
+        echo "2. 错误日志："
         tail -n 20 /var/log/okxdjtv/err.log
         exit 1
     fi
@@ -208,9 +209,7 @@ if [ "$SKIP_SERVICE_START" != "1" ]; then
     echo "=================== 部署完成 ==================="
     echo "项目目录: /root/okxdjtv"
     echo "域名: $DOMAIN"
-    echo "SSL证书配置:"
-    echo "  - 证书文件: $SSL_CERT"
-    echo "  - 私钥文件: $SSL_KEY"
+    echo "SSL证书路径: /etc/letsencrypt/live/$DOMAIN/"
     echo "日志文件位置:"
     echo "  - 程序输出: /var/log/okxdjtv/out.log"
     echo "  - 错误日志: /var/log/okxdjtv/err.log"
@@ -224,19 +223,24 @@ else
     echo "=================== 部署完成 ==================="
     echo "项目目录: /root/okxdjtv"
     echo "域名: $DOMAIN"
-    echo "SSL证书配置:"
-    echo "  - 证书文件: $SSL_CERT"
-    echo "  - 私钥文件: $SSL_KEY"
+    echo "SSL证书路径: /etc/letsencrypt/live/$DOMAIN/"
     echo "环境变量文件: /root/okxdjtv/.env (需要配置)"
     echo ""
     echo "后续步骤:"
     echo "1. 编辑环境变量: nano /root/okxdjtv/.env"
-    echo "2. 启动服务: supervisorctl start okxdjtv"
-    echo "3. 检查状态: supervisorctl status okxdjtv"
-    echo "4. 查看日志: tail -f /var/log/okxdjtv/out.log"
+    echo "2. 重新加载 Supervisor:"
+    echo "   supervisorctl reread"
+    echo "   supervisorctl update"
+    echo "3. 启动服务: supervisorctl start okxdjtv"
+    echo "4. 检查状态: supervisorctl status okxdjtv"
+    echo "5. 查看日志:"
+    echo "   - 程序日志: tail -f /var/log/okxdjtv/out.log"
+    echo "   - 错误日志: tail -f /var/log/okxdjtv/err.log"
     echo "=============================================="
 fi
 
-# Nginx 状态显示
+# 显示服务状态
 echo "Nginx 状态:"
 systemctl status nginx | grep "Active:"
+echo "Supervisor 状态:"
+systemctl status supervisor | grep "Active:"
