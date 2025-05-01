@@ -146,9 +146,10 @@ tail -f /var/log/okxdjtv/out.log
   "time": "{{time}}",
   "interval": "{{interval}}"
 }
+```
 
-2.在 TradingView 警报中设置企业微信接收到的Webhook URL 链接格式如下：
- 
+2. 在 TradingView 警报中设置企业微信接收到的Webhook URL 链接格式如下：
+```
  https//域名/webhook
 ```
 
